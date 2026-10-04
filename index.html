@@ -90,13 +90,74 @@ function render(){
   h='<div class="hd"><h1>Ma garde-robe</h1><button class="lnk" data-a="bk">Sauvegarde</button></div><p class="sub">'+n+(n>1?' pièces':' pièce')+'</p><div class="chips">'+['Tout',...CATS].map(c=>'<button class="chip'+(c==flt?' on':'')+'" data-a="flt" data-v="'+c+'">'+c+'</button>').join('')+'</div><div class="chips">'+['Toutes saisons',...SEA].map(x=>'<button class="chip'+((x==fs||(!fs&&x=='Toutes saisons'))?' on':'')+'" data-a="fs" data-v="'+x+'">'+x+'</button>').join('')+'</div><div class="fr">'+sws('fc',fc)+'</div>'+
   (L.length?'<div class="grid g3">'+L.map(i=>'<button class="it" data-a="item" data-v="'+i.id+'"><img class="ph" src="'+i.img+'" alt=""><span>'+esc(i.name||i.cat)+'</span></button>').join('')+'</div>':'<p class="empty">'+(n?'Aucune pièce avec ces filtres':'Ajoute ta première pièce avec le bouton +')+'</p>')+'<button class="fab" data-a="add" aria-label="Ajouter une pièce">+</button>';
  }else if(tab=='o'){
-  h='<h1>Mes tenues</h1><p class="sub">Compose tes looks avec tes pièces</p><div style="padding:0 20px 16px"><button class="btn" style="margin:0" data-a="newo">Créer une tenue</button></div>'+
+  h='<h1>Mes tenues</h1><p class="sub">Compose tes looks avec tes pièces</p><div style="padding:0 20px 16px"><button class="btn" style="margin:0 0 10px" data-a="sty0">Composer pour moi</button><button class="btn g" style="margin:0" data-a="newo">Créer une tenue</button></div>'+
   (S.outfits.length?'<div class="grid g2">'+S.outfits.map(o=>'<button class="it" data-a="outfit" data-v="'+o.id+'">'+col(o.items)+'<span style="font-size:14px">'+esc(o.name)+'</span></button>').join('')+'</div>':'');
  }else{
   const t=(new Date().getDay()+6)%7;
   h='<h1>Ma semaine</h1><p class="sub">Une tenue pour chaque jour</p>'+DAYS.map((d,i)=>{const o=S.outfits.find(x=>x.id==S.plan[i]);return '<button class="day'+(i==t?' t':'')+'" data-a="day" data-v="'+i+'"><b>'+d+'</b>'+(o?'<div class="mini">'+col(o.items)+'</div><span style="color:var(--fg)">'+esc(o.name)+'</span>':'<span>Choisir une tenue</span>')+'</button>'}).join('');
  }
  $('#v').innerHTML=h;
+}
+let ss='',sa=null,sl=null,lastSig='';
+const NEU=['Noir','Blanc','Gris','Beige','Marron'],HUE={Rouge:0,Orange:30,Jaune:55,Vert:120,Bleu:215,Violet:270,Rose:340};
+const hd=(a,b)=>{const d=Math.abs(HUE[a]-HUE[b]);return Math.min(d,360-d)};
+function pair(a,b){
+ const x=a.c,y=b.c;if(!x||!y)return 1;
+ const nx=NEU.includes(x),ny=NEU.includes(y);
+ if(nx&&ny)return (x=='Marron'&&y=='Noir')||(y=='Marron'&&x=='Noir')?1:3;
+ if(nx||ny)return (x=='Marron'||y=='Marron')?2:3;
+ if(x==y)return 2;
+ const d=hd(x,y);return d<=70?2:d>=150?1.5:-4;
+}
+function score(its,sea){
+ let s=0;for(let i=0;i<its.length;i++)for(let j=i+1;j<its.length;j++)s+=pair(its[i],its[j]);
+ const n=new Set(its.map(i=>i.c).filter(c=>c&&!NEU.includes(c))).size;
+ if(n<=1)s+=3;if(n>2)s-=6;
+ its.forEach(i=>{if(sea&&i.s==sea)s+=1});
+ return s;
+}
+function compose(sea,anchor){
+ const ok=i=>!sea||!i.s||i.s==sea,by=c=>S.items.filter(i=>i.cat==c&&ok(i)),pk=a=>a.length?a[Math.floor(Math.random()*a.length)]:null;
+ const H=by('Hauts'),B=by('Bas'),R=by('Robes'),V=by('Vestes'),C=by('Chaussures'),A=by('Accessoires'),need=anchor&&anchor.cat;
+ if(!R.length&&!(H.length&&B.length)&&!anchor)return null;
+ const out=[];
+ for(let k=0;k<80;k++){
+  let its=[];
+  const dress=need=='Robes'||((!need||need=='Vestes'||need=='Chaussures'||need=='Accessoires')&&R.length&&(!(H.length&&B.length)||Math.random()<.3));
+  if(dress)its.push(pk(R));else its.push(pk(H),pk(B));
+  if(need=='Vestes'||(V.length&&sea!='Été'&&(sea=='Hiver'||Math.random()<.5)))its.push(pk(V));
+  its.push(pk(C));
+  if(A.length&&Math.random()<.4)its.push(pk(A));
+  if(anchor){its=its.filter(i=>i&&i.cat!=anchor.cat);its.push(anchor)}
+  its=its.filter(Boolean);
+  if(its.length<2)continue;
+  out.push([score(its,sea)+Math.random()*1.5,its]);
+ }
+ if(!out.length)return null;
+ out.sort((a,b)=>b[0]-a[0]);
+ const sig=x=>x[1].map(i=>i.id).sort().join();
+ const cand=out.filter(x=>sig(x)!=lastSig).slice(0,4),L=cand.length?cand:out,pick=L[Math.floor(Math.random()*Math.min(L.length,4))];
+ lastSig=sig(pick);
+ return pick[1].sort((a,b)=>CATS.indexOf(a.cat)-CATS.indexOf(b.cat));
+}
+function why(its,sea){
+ const cs=[...new Set(its.map(i=>i.c).filter(c=>c&&!NEU.includes(c)))];
+ let t;
+ if(!cs.length)t='Tenue sobre dans des tons neutres, facile à porter.';
+ else if(cs.length==1)t='Une seule couleur d\'accent ('+cs[0]+') sur une base neutre.';
+ else if(cs.length>2)t='Plusieurs couleurs : essaie une autre proposition.';
+ else t=hd(cs[0],cs[1])<=70?'Deux couleurs voisines ('+cs[0]+' et '+cs[1]+') qui vont bien ensemble.':'Contraste audacieux entre '+cs[0]+' et '+cs[1]+'.';
+ if(sea)t+=' Pensée pour '+(sea=='Été'?'l\'été':sea=='Hiver'?'l\'hiver':'la demi-saison')+'.';
+ if(S.items.filter(i=>!i.c).length>S.items.length*.3)t+=' Ajoute les couleurs de tes pièces pour de meilleurs résultats.';
+ return t;
+}
+function look(){
+ sl=compose(ss,sa);
+ $('#lk').innerHTML=sl?'<div class="row">'+sl.map(i=>'<img class="th" style="width:90px;height:120px" src="'+i.img+'" alt="">').join('')+'</div><p class="sub" style="margin:8px 0 0">'+why(sl,ss)+'</p>':'<p class="sub" style="margin:8px 0 0">Ajoute au moins un haut et un bas (ou une robe) pour que je compose une tenue.</p>';
+}
+function stylist(){
+ sheet('<h2>Composer pour moi</h2><p class="lab" style="margin-top:0">Saison</p><div class="chips" style="padding:0 0 8px" id="ss">'+['Toutes saisons',...SEA].map(x=>'<button class="chip'+((x==ss||(!ss&&x=='Toutes saisons'))?' on':'')+'" data-a="ssea" data-v="'+x+'">'+x+'</button>').join('')+'</div>'+(sa?'<p class="sub" style="margin:0 0 6px">Autour de : '+esc(sa.name||sa.cat)+'</p>':'')+'<div id="lk"></div><button class="btn" data-a="slook">Une autre proposition</button><button class="btn g" data-a="ssave">Enregistrer cette tenue</button><button class="btn g" data-a="x">Fermer</button>');
+ look();
 }
 function icon(){try{const c=document.createElement('canvas');c.width=c.height=180;const x=c.getContext('2d');x.fillStyle='#17191c';x.fillRect(0,0,180,180);x.strokeStyle='#fff';x.lineWidth=9;x.lineCap=x.lineJoin='round';x.beginPath();x.moveTo(90,88);x.lineTo(90,72);x.arc(90,58,14,Math.PI/2,Math.PI*2);x.moveTo(90,88);x.lineTo(28,124);x.lineTo(152,124);x.closePath();x.stroke();const u=c.toDataURL('image/png');['icon','apple-touch-icon'].forEach(r=>{const l=document.createElement('link');l.rel=r;l.href=u;document.head.appendChild(l)})}catch(e){}}
 function today(){
@@ -109,7 +170,7 @@ async function dump(){
  try{const u=URL.createObjectURL(new Blob([data],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);return 'Sauvegarde enregistrée.'}catch(e){return 'La sauvegarde a échoué.'}
 }
 function sheet(h){$('#s').innerHTML='<div class="bk" data-a="x"></div><div class="sh">'+h+'</div>';$('#s').hidden=false}
-function close(){$('#s').hidden=true;draft=null;pics=[];ed=null;oe=null}
+function close(){$('#s').hidden=true;draft=null;pics=[];ed=null;oe=null;sa=null}
 function sws(a,s){return COL.map(([n,h])=>'<button class="sw'+(n==s?' on':'')+'" style="background:'+h+'" data-a="'+a+'" data-v="'+n+'" aria-label="'+n+'"></button>').join('')}
 function addForm(it){
  dc=it&&it.c||'';ds=it&&it.s||'';ed=it||null;pics=[];
@@ -146,13 +207,18 @@ document.addEventListener('click',e=>{
  else if(a=='fc'){fc=fc==v?'':v;render()}
  else if(a=='dcol'){dc=dc==v?'':v;document.querySelectorAll('#dc .sw').forEach(x=>x.classList.toggle('on',x.dataset.v==dc))}
  else if(a=='dsea'){ds=ds==v?'':v;document.querySelectorAll('#ds .chip').forEach(x=>x.classList.toggle('on',x.dataset.v==ds))}
+ else if(a=='sty0'){sa=null;stylist()}
+ else if(a=='sty'){sa=find(v);stylist()}
+ else if(a=='ssea'){ss=v=='Toutes saisons'?'':v;document.querySelectorAll('#ss .chip').forEach(x=>x.classList.toggle('on',x.dataset.v==(ss||'Toutes saisons')));look()}
+ else if(a=='slook')look();
+ else if(a=='ssave'){if(sl){S.outfits.unshift({id:Date.now(),name:'Look '+(S.outfits.length+1),items:sl.map(i=>i.id)});save();close();tab='o';render()}}
  else if(a=='edo'){oe=S.outfits.find(x=>x.id==v);draft={};oe.items.forEach(id=>{const i=find(id);if(i)draft[i.cat]=String(id)});sheet(builder())}
  else if(a=='ok'){
   if(ed){ed.cat=$('#c').value;ed.name=$('#n').value.trim();ed.c=dc;ed.s=ds;save();close();render();return}if(!pics.length){t.textContent='Choisis d\'abord une photo';return}
   const nm=pics.length==1?$('#n').value.trim():'';pics.forEach((p,k)=>S.items.unshift({id:Date.now()+k,cat:$('#c').value,name:nm,img:p,c:dc,s:ds}));save();close();render();
  }else if(a=='item'){
   const i=find(v);
-  sheet('<img src="'+i.img+'" alt="" style="width:100%;max-height:50vh;object-fit:contain;border-radius:12px;background:var(--tile)"><h2 style="margin-top:14px">'+esc(i.name||i.cat)+'</h2><p class="sub" style="margin:0">'+[i.cat,i.c,i.s].filter(Boolean).join(' · ')+'</p><button class="btn" data-a="edi" data-v="'+i.id+'">Modifier</button><button class="btn r" data-a="deli" data-v="'+i.id+'">Supprimer</button><button class="btn g" data-a="x">Fermer</button>');
+  sheet('<img src="'+i.img+'" alt="" style="width:100%;max-height:50vh;object-fit:contain;border-radius:12px;background:var(--tile)"><h2 style="margin-top:14px">'+esc(i.name||i.cat)+'</h2><p class="sub" style="margin:0">'+[i.cat,i.c,i.s].filter(Boolean).join(' · ')+'</p><button class="btn" data-a="sty" data-v="'+i.id+'">Composer une tenue avec cette pièce</button><button class="btn g" data-a="edi" data-v="'+i.id+'">Modifier</button><button class="btn r" data-a="deli" data-v="'+i.id+'">Supprimer</button><button class="btn g" data-a="x">Fermer</button>');
  }else if(a=='deli'){t.dataset.a='deli2';t.textContent='Confirmer la suppression'}
  else if(a=='deli2'){
   S.items=S.items.filter(x=>x.id!=v);
